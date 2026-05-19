@@ -97,7 +97,9 @@ my-project/                 # 用户项目
 
 ### CLI 发布
 
-`packages/cli/` 目录会发布到 npm 包 `create-unibest`，用户安装后从 Git main 分支克隆模板。
+`packages/cli/` 目录会发布到 npm 包 `create-unibest`，用户安装后从 Git `base` 分支克隆模板。
+
+分支职责：`main` 是完整开发与发布分支，包含 CLI 源码和文档；`base` 是用户项目模板分支，也是 CLI 创建项目时的模板来源。
 
 ## 📦 使用方式
 
@@ -107,7 +109,7 @@ my-project/                 # 用户项目
 # 全局安装 CLI
 pnpm add -g create-unibest
 
-# 创建项目（从 main 分支克隆模板）
+# 创建项目（从 base 分支克隆模板）
 pnpm create unibest my-project
 cd my-project
 
