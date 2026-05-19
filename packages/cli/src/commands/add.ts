@@ -1,4 +1,5 @@
 import type minimist from 'minimist'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
@@ -13,8 +14,14 @@ import { readPackageJson, writePackageJson } from '../utils/readPackageJson'
 
 interface AddOptions {
   path?: string
-  feature?: string | string[]
+  feature?: string[]
   force?: boolean
+  install?: boolean
+}
+
+interface AddFeatureResult {
+  success: boolean
+  addedDependencies: string[]
 }
 
 interface FeatureStatus {
@@ -69,6 +76,77 @@ function updatePackageJsonForFeature(pkgPath: string, featureName: string): void
   writePackageJson(pkgPath, pkg)
 }
 
+function mergeFeatureDependencies(
+  pkgPath: string,
+  dependencies: Record<string, string> = {},
+): string[] {
+  const entries = Object.entries(dependencies)
+  if (entries.length === 0) {
+    return []
+  }
+
+  const pkg = readPackageJson(pkgPath)
+  if (!pkg.dependencies) {
+    pkg.dependencies = {}
+  }
+
+  const addedDependencies: string[] = []
+  for (const [name, version] of entries) {
+    if (pkg.dependencies?.[name] || pkg.devDependencies?.[name]) {
+      continue
+    }
+
+    pkg.dependencies[name] = version
+    addedDependencies.push(name)
+  }
+
+  if (addedDependencies.length > 0) {
+    writePackageJson(pkgPath, pkg)
+  }
+
+  return addedDependencies
+}
+
+async function installDependencies(projectPath: string): Promise<boolean> {
+  logger.info('正在执行 pnpm install 安装新增依赖...')
+
+  return new Promise((resolve) => {
+    const child = spawn('pnpm', ['install'], {
+      cwd: projectPath,
+      stdio: 'inherit',
+      shell: false,
+    })
+
+    child.on('error', (error) => {
+      logger.error(`执行 pnpm install 失败: ${error.message}`)
+      resolve(false)
+    })
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        logger.success('依赖安装完成')
+        resolve(true)
+      }
+      else {
+        logger.error(`pnpm install 退出码: ${code}`)
+        resolve(false)
+      }
+    })
+  })
+}
+
+function normalizeFeatureOption(value: unknown): string[] {
+  if (!value) {
+    return []
+  }
+
+  const values = Array.isArray(value) ? value : [value]
+  return values
+    .flatMap(item => String(item).split(','))
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
 async function checkFeatureStatus(projectPath: string): Promise<FeatureStatus[]> {
   const pkgPath = path.join(projectPath, 'package.json')
   const statusFromPkg = getFeatureStatusFromPackageJson(pkgPath)
@@ -85,11 +163,11 @@ async function addFeature(
   featureName: string,
   projectPath: string,
   options: AddOptions = {},
-): Promise<boolean> {
+): Promise<AddFeatureResult> {
   const feature = getFeatureByName(featureName)
   if (!feature) {
     logger.error(`未知的 Feature: ${featureName}`)
-    return false
+    return { success: false, addedDependencies: [] }
   }
 
   const pkgPath = path.join(projectPath, 'package.json')
@@ -112,7 +190,11 @@ async function addFeature(
 
   if (alreadyAdded && !options.force) {
     logger.warn(`Feature ${featureName} 已添加过，如需重新注入请使用 --force 参数`)
-    return true
+    const addedDependencies = mergeFeatureDependencies(pkgPath, feature.dependencies)
+    if (addedDependencies.length > 0) {
+      logger.success(`已更新 package.json 依赖: ${addedDependencies.join(', ')}`)
+    }
+    return { success: true, addedDependencies }
   }
 
   log.info(`正在添加 Feature: ${green(featureName)} - ${feature.description}`)
@@ -135,17 +217,24 @@ async function addFeature(
         break
       default:
         logger.error(`不支持的 Feature: ${featureName}`)
-        return false
+        return { success: false, addedDependencies: [] }
     }
 
     // 打印注入结果
+    const failedResults = []
     for (const result of results) {
       if (result.success) {
         logger.success(result.message)
       }
       else {
+        failedResults.push(result)
         logger.warn(result.message)
       }
+    }
+
+    if (failedResults.length > 0) {
+      logger.error(`Feature ${featureName} 注入未完全成功，未更新 package.json 的 unibest 配置`)
+      return { success: false, addedDependencies: [] }
     }
 
     // 执行 hooks
@@ -162,25 +251,28 @@ async function addFeature(
     updatePackageJsonForFeature(pkgPath, featureName)
     logger.success(`已更新 package.json 的 unibest 配置`)
 
-    // 安装依赖
-    if (feature.dependencies && Object.keys(feature.dependencies).length > 0) {
-      logger.info(`安装依赖: ${Object.keys(feature.dependencies).join(', ')}`)
+    const addedDependencies = mergeFeatureDependencies(pkgPath, feature.dependencies)
+    if (addedDependencies.length > 0) {
+      logger.success(`已更新 package.json 依赖: ${addedDependencies.join(', ')}`)
     }
 
     logger.success(`Feature ${featureName} 添加成功！`)
-    return true
+    return { success: true, addedDependencies }
   }
   catch (error) {
     logger.error(`添加 Feature 失败: ${(error as Error).message}`)
-    return false
+    return { success: false, addedDependencies: [] }
   }
 }
 
 export async function addCommand(args: minimist.ParsedArgs): Promise<void> {
+  const positionalFeatures = normalizeFeatureOption(args._.slice(1))
+  const optionFeatures = normalizeFeatureOption(args.feature)
   const options: AddOptions = {
     path: args.path || args.p || '.',
-    feature: args._[1] || args.feature || args.f,
-    force: args.force || args.f,
+    feature: positionalFeatures.length > 0 ? positionalFeatures : optionFeatures,
+    force: args.force === true || args.force === 'true',
+    install: args.install === true || args.install === 'true',
   }
 
   intro(bold(green(`create-unibest@v${version} 添加 Feature`)))
@@ -206,8 +298,10 @@ export async function addCommand(args: minimist.ParsedArgs): Promise<void> {
   const availableFeatures = getAvailableFeatureNames()
 
   try {
+    const addedDependencies = new Set<string>()
+
     // 如果没有指定 feature，则让用户选择
-    if (!options.feature) {
+    if (!options.feature || options.feature.length === 0) {
       // 检测已启用的 Feature
       const detected = await checkFeatureStatus(projectPath)
       const available = availableFeatures.filter(f => !detected.find(d => d.name === f && d.enabled))
@@ -242,14 +336,37 @@ export async function addCommand(args: minimist.ParsedArgs): Promise<void> {
 
       // 逐个添加
       for (const featureName of selectedFeatures) {
-        await addFeature(featureName as string, projectPath, options)
+        const result = await addFeature(featureName as string, projectPath, options)
+        if (!result.success) {
+          continue
+        }
+        for (const dependency of result.addedDependencies) {
+          addedDependencies.add(dependency)
+        }
       }
     }
     else {
       // 添加单个或多个指定 feature
-      const features = Array.isArray(options.feature) ? options.feature : [options.feature]
-      for (const featureName of features) {
-        await addFeature(featureName, projectPath, options)
+      for (const featureName of options.feature) {
+        const result = await addFeature(featureName, projectPath, options)
+        if (!result.success) {
+          continue
+        }
+        for (const dependency of result.addedDependencies) {
+          addedDependencies.add(dependency)
+        }
+      }
+    }
+
+    if (addedDependencies.size > 0) {
+      if (options.install) {
+        const installSucceeded = await installDependencies(projectPath)
+        if (!installSucceeded) {
+          logger.warn('Feature 已写入，依赖安装失败，请手动运行 pnpm install')
+        }
+      }
+      else {
+        logger.info('已更新 package.json，请运行 pnpm install 安装新增依赖')
       }
     }
   }

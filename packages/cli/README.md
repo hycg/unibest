@@ -48,6 +48,9 @@ pnpm create unibest add login
 
 # 强制重新注入（覆盖已有配置）
 pnpm create unibest add i18n --force
+
+# 写入依赖后自动安装
+pnpm create unibest add i18n --install
 ```
 
 ## 参数说明
@@ -66,7 +69,9 @@ pnpm create unibest add i18n --force
 | 参数      | 说明                   |
 | --------- | ---------------------- |
 | `--path`  | 项目路径，默认当前目录 |
+| `--feature` | 指定要添加的 Feature，支持逗号分隔 |
 | `--force` | 强制重新注入 Feature   |
+| `--install` | 写入依赖后自动执行 `pnpm install` |
 
 ## 与 unibest 模板版本对应关系
 
