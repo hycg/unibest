@@ -7,9 +7,11 @@ vi.mock('@/api/login', () => ({
 }))
 
 describe('useUserStore', () => {
-  it('初始状态：userId 为 -1，avatar 为默认头像', () => {
+  it('初始状态：userId 为 -1，username 为空，avatar 为默认头像', () => {
     const store = useUserStore()
     expect(store.userInfo.userId).toBe(-1)
+    expect(store.userInfo.username).toBe('')
+    expect(store.userInfo.nickname).toBe('')
     expect(store.userInfo.avatar).toBe('/static/images/default-avatar.png')
   })
 
@@ -63,5 +65,7 @@ describe('useUserStore', () => {
 
     expect(store.userInfo.userId).toBe(42)
     expect(store.userInfo.username).toBe('api_user')
+    expect(store.userInfo.nickname).toBe('API User')
+    expect(store.userInfo.avatar).toBe('https://x.com/a.png')
   })
 })
