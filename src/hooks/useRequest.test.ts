@@ -16,7 +16,8 @@ function withSetup<T>(composableFn: () => T): T {
       return () => h('div')
     },
   })
-  mount(Comp)
+  const wrapper = mount(Comp)
+  wrapper.unmount()
   return result
 }
 
@@ -61,10 +62,13 @@ describe('useRequest', () => {
     expect(error.value).toBe(err)
   })
 
-  it('immediate=true：组件挂载时立即调用异步函数', async () => {
+  it('immediate=true：组件挂载时立即调用异步函数并更新 data', async () => {
     const asyncFn = vi.fn().mockResolvedValue('eager')
-    withSetup(() => useRequest(asyncFn, { immediate: true }))
+    const { data } = withSetup(() => useRequest(asyncFn, { immediate: true }))
 
     expect(asyncFn).toHaveBeenCalledTimes(1)
+    // 等待 Promise 完成
+    await asyncFn.mock.results[0].value
+    expect(data.value).toBe('eager')
   })
 })
