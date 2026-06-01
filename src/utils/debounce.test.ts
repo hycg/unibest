@@ -10,19 +10,20 @@ describe('debounce', () => {
     vi.useRealTimers()
   })
 
-  it('trailing edge（默认）：多次调用后只触发一次', () => {
+  it('trailing edge（默认）：多次调用后只触发一次，使用最后一次的参数', () => {
     const fn = vi.fn()
     const debouncedFn = debounce(fn, 100)
 
-    debouncedFn()
-    debouncedFn()
-    debouncedFn()
+    debouncedFn('first')
+    debouncedFn('second')
+    debouncedFn('last')
 
     expect(fn).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(100)
 
     expect(fn).toHaveBeenCalledTimes(1)
+    expect(fn).toHaveBeenCalledWith('last')
   })
 
   it('cancel：取消后计时器到期不执行', () => {
