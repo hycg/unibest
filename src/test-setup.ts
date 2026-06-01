@@ -3,6 +3,7 @@ import { beforeEach, vi } from 'vitest'
 
 // 每个测试前重置 Pinia 实例，避免状态在测试间泄漏
 beforeEach(() => {
+  // 不注册 pinia-plugin-persistedstate，测试只验证 store 逻辑，不验证持久化行为
   setActivePinia(createPinia())
   // 重置所有 mock 的调用记录（保留实现，仅清空 .mock.calls 等）
   vi.clearAllMocks()
@@ -39,10 +40,12 @@ const uniMock = {
 Object.defineProperty(globalThis, 'uni', {
   value: uniMock,
   writable: true,
+  configurable: true,
 })
 
 // getCurrentPages 是 uni-app 的全局函数（不在 uni 对象上）
 Object.defineProperty(globalThis, 'getCurrentPages', {
   value: vi.fn().mockReturnValue([{ route: '/pages/index/index' }]),
   writable: true,
+  configurable: true,
 })
